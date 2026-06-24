@@ -34,6 +34,39 @@ async def gerar_resposta(contexto: dict) -> str:
         return _resposta_simples(contexto)
 
 
+async def responder_pergunta(contexto: dict, pergunta: str) -> str:
+    """Responde uma pergunta em linguagem natural, ancorada no contexto da viagem.
+
+    Diferente de gerar_resposta (que resume um relatorio), aqui o usuario escreveu
+    uma pergunta livre e o bot responde usando os dados que tem em maos.
+    """
+    if not GEMINI_API_KEY:
+        return ("Pra responder perguntas livres eu preciso do Gemini configurado. "
+                "Por enquanto, use os comandos: /relatorio, /combustivel, /postos, /dicas, /rota.")
+
+    prompt = (
+        f"{PERSONA}\n\n"
+        f"Um dos pilotos perguntou: \"{pergunta}\"\n\n"
+        "Responda de forma curta e util, usando o CONTEXTO abaixo (localizacao atual, clima, "
+        "postos, atracoes, proxima parada e a rota planejada deles). Se a resposta nao estiver "
+        "no contexto, diga com franqueza que nao tem esse dado e sugira um comando ou uma acao "
+        "(ex.: compartilhar a localizacao). Nao invente lugares, enderecos nem distancias.\n\n"
+        f"CONTEXTO (JSON):\n{contexto}"
+    )
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    params = {"key": GEMINI_API_KEY}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(URL, params=params, json=body)
+            r.raise_for_status()
+            data = r.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        return ("Nao consegui pensar agora (provavelmente sem sinal). "
+                "Tente os comandos, que funcionam com o ultimo dado em cache: "
+                "/relatorio, /combustivel, /postos, /dicas.")
+
+
 def _resposta_simples(ctx: dict) -> str:
     """Resumo de reserva, sem LLM: garante que o bot sempre responde algo util."""
     linhas = []
@@ -50,6 +83,9 @@ def _resposta_simples(ctx: dict) -> str:
     if prox:
         km = prox["distancia_m"] / 1000
         linhas.append(f"🏁 Proxima parada: {prox['waypoint']['nome']} (~{km:.0f} km).")
+    comb = ctx.get("combustivel")
+    if comb:
+        linhas.append(comb)
     postos = ctx.get("postos") or []
     if postos:
         nomes = ", ".join(p["nome"] for p in postos[:3])

@@ -132,6 +132,20 @@ O piloto compartilha a **localização ao vivo** (clipe 📎 → Localização �
 - Manda um **relatório completo a cada ~10 min** (configurável em `INTERVALO_RELATORIO` no `bot.py`), pra não floodar nem gastar API à toa.
 - Dispara um **alerta imediato** sempre que vocês chegam a menos de 3 km de um ponto que marcaram na planilha, já trazendo a dica que vocês anotaram.
 
+### Perguntas em linguagem natural
+
+Além dos comandos, você pode mandar qualquer **pergunta em texto normal** ("vale a pena parar em Tucumcari?", "onde comer bem por aqui?", "qual o próximo lugar histórico?"). O bot usa a última localização conhecida + os dados que ele busca (clima, postos, atrações, rota) e responde via Gemini. Isso depende de **sinal de internet**; sem sinal, ele orienta a usar os comandos, que respondem com o cache.
+
+### ⚠️ Uso em grupo (vocês dois): desligar o "privacy mode"
+
+Por padrão, um bot do Telegram em **grupo** só enxerga mensagens que começam com `/` ou que o mencionam com `@`. Ou seja, num grupo ele **não veria** nem a localização ao vivo nem as perguntas em texto livre. Pra liberar:
+
+1. No **@BotFather**, mande `/setprivacy`.
+2. Escolha o seu bot.
+3. Selecione **Disable**.
+
+Depois disso, remova e adicione o bot ao grupo de novo (pra valer a mudança). Em conversa privada (1 a 1) isso não é necessário — o bot já vê tudo.
+
 ---
 
 ## Etapa 7 — Deixar rodando 24h de graça (deploy)

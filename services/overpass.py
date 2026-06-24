@@ -34,8 +34,8 @@ def _extrair(elementos, limite=8):
     return saida
 
 
-async def get_postos(lat, lon, raio):
-    chave = f"postos:{round(lat,2)},{round(lon,2)}:{raio}"
+async def get_postos(lat, lon, raio, limite=8):
+    chave = f"postos:{round(lat,2)},{round(lon,2)}:{raio}:{limite}"
     query = f"""
         [out:json][timeout:25];
         node[amenity=fuel](around:{raio},{lat},{lon});
@@ -43,7 +43,7 @@ async def get_postos(lat, lon, raio):
     """
     try:
         data = await _consultar(query)
-        resultado = _extrair(data.get("elements", []))
+        resultado = _extrair(data.get("elements", []), limite=limite)
         salvar_cache(chave, resultado)
         return resultado
     except Exception:

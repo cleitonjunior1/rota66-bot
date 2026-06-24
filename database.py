@@ -64,6 +64,19 @@ def init_db():
         )
     """)
 
+    # Pilotos: localizacao por PESSOA dentro de um chat/grupo (coordenacao entre motos).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pilotos (
+            chat_id        INTEGER,
+            user_id        INTEGER,
+            nome           TEXT,
+            lat            REAL,
+            lon            REAL,
+            atualizado_em  REAL,
+            PRIMARY KEY (chat_id, user_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -159,3 +172,25 @@ def ler_conhecimento():
     row = conn.execute("SELECT conteudo FROM conhecimento WHERE id = 1").fetchone()
     conn.close()
     return row["conteudo"] if row else ""
+
+
+# ----- Pilotos (coordenacao entre as motos) -----
+
+def upsert_piloto(chat_id, user_id, nome, lat, lon, ts):
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO pilotos (chat_id, user_id, nome, lat, lon, atualizado_em) "
+        "VALUES (?,?,?,?,?,?)",
+        (chat_id, user_id, nome, lat, lon, ts),
+    )
+    conn.commit()
+    conn.close()
+
+
+def listar_pilotos(chat_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM pilotos WHERE chat_id = ? ORDER BY atualizado_em DESC", (chat_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

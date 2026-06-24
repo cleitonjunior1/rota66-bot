@@ -18,6 +18,9 @@ TANQUE_LITROS = float(os.getenv("TANQUE_LITROS", "18.9"))
 CONSUMO_KM_L = float(os.getenv("CONSUMO_KM_L", "17"))
 RESERVA_LITROS = float(os.getenv("RESERVA_LITROS", "3.8"))
 
+# Distancia (metros) a partir da qual o bot avisa que as duas motos se afastaram.
+SEPARACAO_ALERTA = int(os.getenv("SEPARACAO_ALERTA", "8000"))
+
 # Caminho do banco SQLite e da planilha da rota
 DB_PATH = os.getenv("DB_PATH", "rota66.db")
 EXCEL_PATH = os.getenv("EXCEL_PATH", "rota.xlsx")

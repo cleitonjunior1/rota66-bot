@@ -13,6 +13,33 @@ def haversine(lat1, lon1, lat2, lon2):
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def bearing(lat1, lon1, lat2, lon2):
+    """Rumo (graus, 0=Norte) do ponto 1 para o ponto 2."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    x = math.sin(dlon) * math.cos(p2)
+    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dlon)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+
+def bussola(graus):
+    """Converte um rumo em ponto cardeal em portugues."""
+    pontos = ["norte", "nordeste", "leste", "sudeste", "sul", "sudoeste", "oeste", "noroeste"]
+    return pontos[round(graus / 45) % 8]
+
+
+def ponto_medio(lat1, lon1, lat2, lon2):
+    """Ponto geografico medio entre duas coordenadas."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    bx = math.cos(p2) * math.cos(dlon)
+    by = math.cos(p2) * math.sin(dlon)
+    p3 = math.atan2(math.sin(p1) + math.sin(p2),
+                    math.sqrt((math.cos(p1) + bx) ** 2 + by ** 2))
+    lon3 = math.radians(lon1) + math.atan2(by, math.cos(p1) + bx)
+    return math.degrees(p3), math.degrees(lon3)
+
+
 def proxima_parada(lat, lon):
     """Retorna o proximo waypoint ainda nao visitado, em ordem de rota,
     junto com a distancia atual ate ele. None se a rota acabou."""

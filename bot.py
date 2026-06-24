@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 from config import TELEGRAM_TOKEN, SEARCH_RADIUS, PROXIMITY_ALERT
-from database import init_db, get_estado, set_estado, listar_waypoints, marcar_visitado
+from database import init_db, get_estado, set_estado, listar_waypoints, marcar_visitado, ler_conhecimento
 from services.weather import get_clima
 from services.geo import reverse_geocode
 from services.overpass import get_postos, get_atracoes
@@ -189,7 +189,7 @@ async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "rota_planejada": rota,
         }
 
-    resposta = await responder_pergunta(contexto, pergunta)
+    resposta = await responder_pergunta(contexto, pergunta, planilha=ler_conhecimento())
     await msg.reply_text(resposta)
 
 

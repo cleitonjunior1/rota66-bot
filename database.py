@@ -56,6 +56,14 @@ def init_db():
         )
     """)
 
+    # Conhecimento: texto bruto de TODAS as abas da planilha, para perguntas livres.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conhecimento (
+            id        INTEGER PRIMARY KEY CHECK (id = 1),
+            conteudo  TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -135,3 +143,19 @@ def set_estado(chat_id, lat, lon, ultimo_aviso):
     )
     conn.commit()
     conn.close()
+
+
+# ----- Conhecimento (texto bruto da planilha) -----
+
+def salvar_conhecimento(texto):
+    conn = get_conn()
+    conn.execute("INSERT OR REPLACE INTO conhecimento (id, conteudo) VALUES (1, ?)", (texto,))
+    conn.commit()
+    conn.close()
+
+
+def ler_conhecimento():
+    conn = get_conn()
+    row = conn.execute("SELECT conteudo FROM conhecimento WHERE id = 1").fetchone()
+    conn.close()
+    return row["conteudo"] if row else ""

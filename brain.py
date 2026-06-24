@@ -34,24 +34,27 @@ async def gerar_resposta(contexto: dict) -> str:
         return _resposta_simples(contexto)
 
 
-async def responder_pergunta(contexto: dict, pergunta: str) -> str:
+async def responder_pergunta(contexto: dict, pergunta: str, planilha: str = "") -> str:
     """Responde uma pergunta em linguagem natural, ancorada no contexto da viagem.
 
     Diferente de gerar_resposta (que resume um relatorio), aqui o usuario escreveu
-    uma pergunta livre e o bot responde usando os dados que tem em maos.
+    uma pergunta livre e o bot responde usando os dados que tem em maos, incluindo
+    o conteudo completo da planilha (datas, hoteis, custos, distancias, etc.).
     """
     if not GEMINI_API_KEY:
         return ("Pra responder perguntas livres eu preciso do Gemini configurado. "
                 "Por enquanto, use os comandos: /relatorio, /combustivel, /postos, /dicas, /rota.")
 
+    secao_planilha = f"\n\nDADOS DA PLANILHA DA VIAGEM (todas as abas):\n{planilha}" if planilha else ""
     prompt = (
         f"{PERSONA}\n\n"
         f"Um dos pilotos perguntou: \"{pergunta}\"\n\n"
-        "Responda de forma curta e util, usando o CONTEXTO abaixo (localizacao atual, clima, "
-        "postos, atracoes, proxima parada e a rota planejada deles). Se a resposta nao estiver "
-        "no contexto, diga com franqueza que nao tem esse dado e sugira um comando ou uma acao "
-        "(ex.: compartilhar a localizacao). Nao invente lugares, enderecos nem distancias.\n\n"
-        f"CONTEXTO (JSON):\n{contexto}"
+        "Responda de forma curta e util. Use o CONTEXTO ATUAL (localizacao, clima, postos, "
+        "atracoes, proxima parada) e tambem os DADOS DA PLANILHA (a viagem inteira: datas, "
+        "hoteis, custos, distancias, pontos). Se a resposta nao estiver em nenhum dos dois, diga "
+        "com franqueza que nao tem o dado. Nao invente lugares, enderecos, datas nem distancias.\n\n"
+        f"CONTEXTO ATUAL (JSON):\n{contexto}"
+        f"{secao_planilha}"
     )
     body = {"contents": [{"parts": [{"text": prompt}]}]}
     params = {"key": GEMINI_API_KEY}

@@ -9,9 +9,10 @@ Adaptado ao formato real da planilha (multi-aba):
   - Aba "POI": observacoes/dicas, casadas por cidade e anexadas a cada ponto.
 """
 import asyncio
+import datetime
 import openpyxl
 from config import EXCEL_PATH
-from database import init_db, limpar_waypoints, inserir_waypoint
+from database import init_db, limpar_waypoints, inserir_waypoint, salvar_conhecimento
 from services.geo import forward_geocode
 
 ABA_LUGARES = "Lista de Lugares"
@@ -51,6 +52,46 @@ def _carregar_poi(wb):
         if texto:
             dicas.setdefault(cidade.lower(), []).append(texto)
     return {c: "; ".join(v) for c, v in dicas.items()}
+
+
+def _fmt(v):
+    """Formata valores para texto legivel (datas e duracoes viram texto)."""
+    if isinstance(v, datetime.datetime):
+        return v.strftime("%d/%m/%Y")
+    if isinstance(v, datetime.timedelta):
+        h = v.seconds // 3600
+        m = (v.seconds % 3600) // 60
+        return f"{h}h{m:02d}"
+    return "" if v is None else str(v).strip()
+
+
+def _dump_planilha(wb):
+    """Le TODAS as abas e devolve um texto unico com o conteudo, para o Gemini
+    poder responder perguntas sobre qualquer tema da planilha (datas, custos,
+    hoteis, distancias, etc.)."""
+    blocos = []
+    for nome in wb.sheetnames:
+        ws = wb[nome]
+        linhas = list(ws.iter_rows(values_only=True))
+        if not linhas:
+            continue
+        bloco = [f"## Aba: {nome}"]
+        ultima_data = None
+        for linha in linhas:
+            cels = list(linha)
+            # Na aba "Roteiro" a data so aparece na 1a perna do dia; replicamos
+            # para baixo para cada trecho carregar a sua data explicitamente.
+            if nome == "Roteiro" and len(cels) > 1:
+                if isinstance(cels[1], datetime.datetime):
+                    ultima_data = cels[1]
+                elif cels[1] is None and ultima_data and any(c is not None for c in cels[2:]):
+                    cels[1] = ultima_data
+            valores = [_fmt(c) for c in cels]
+            if not any(valores):  # linha totalmente vazia
+                continue
+            bloco.append(" | ".join(valores))
+        blocos.append("\n".join(bloco))
+    return "\n\n".join(blocos)
 
 
 async def carregar():
@@ -103,7 +144,11 @@ async def carregar():
         )
         total += 1
 
+    # Guarda o texto de TODAS as abas para as perguntas em linguagem natural.
+    salvar_conhecimento(_dump_planilha(wb))
+
     print(f"\nPronto! {total} pontos carregados. {len(poi_por_cidade)} cidades com dicas da aba POI.")
+    print("Conteudo de todas as abas indexado para perguntas livres.")
 
 
 if __name__ == "__main__":

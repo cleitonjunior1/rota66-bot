@@ -18,7 +18,8 @@ from services.weather import get_clima
 from services.geo import reverse_geocode
 from services.overpass import get_postos, get_atracoes
 from services.route import proxima_parada, pontos_proximos
-from brain import gerar_resposta
+from services.fuel import analise_combustivel, AUTONOMIA_TOTAL_KM, AUTONOMIA_SEGURA_KM
+from brain import gerar_resposta, responder_pergunta
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("rota66")
@@ -28,12 +29,14 @@ INTERVALO_RELATORIO = 600  # 10 minutos
 
 
 async def montar_relatorio(lat, lon):
-    """Busca todos os dados em paralelo e gera o texto final via Gemini."""
-    clima, local, postos, atracoes = await asyncio.gather(
+    """Busca todos os dados em paralelo e gera o texto final via Gemini.
+    Retorna (texto, diagnostico_de_combustivel)."""
+    clima, local, postos, atracoes, comb = await asyncio.gather(
         get_clima(lat, lon),
         reverse_geocode(lat, lon),
         get_postos(lat, lon, SEARCH_RADIUS),
         get_atracoes(lat, lon, SEARCH_RADIUS),
+        analise_combustivel(lat, lon),
     )
     prox = proxima_parada(lat, lon)
     contexto = {
@@ -42,8 +45,9 @@ async def montar_relatorio(lat, lon):
         "postos": postos,
         "atracoes": atracoes,
         "proxima_parada": prox,
+        "combustivel": comb["mensagem"],
     }
-    return await gerar_resposta(contexto)
+    return await gerar_resposta(contexto), comb
 
 
 # ----- Comandos -----
@@ -55,9 +59,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "que eu vou acompanhando voces e avisando sobre paradas, postos e dicas.\n\n"
         "Comandos:\n"
         "/relatorio — clima, postos e dicas de onde voces estao agora\n"
+        "/combustivel — autonomia da moto e postos por perto\n"
         "/rota — proximas paradas planejadas\n"
         "/postos — postos de gasolina por perto\n"
-        "/dicas — o que visitar por perto"
+        "/dicas — o que visitar por perto\n\n"
+        "💬 Ou simplesmente me *pergunte* qualquer coisa (\"vale a pena parar em Tucumcari?\", "
+        "\"onde comer bem por aqui?\") que eu respondo com base em onde voces estao."
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
 
@@ -78,8 +85,28 @@ async def cmd_relatorio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not coords:
         return
     await update.message.chat.send_action("typing")
-    texto = await montar_relatorio(*coords)
+    texto, _ = await montar_relatorio(*coords)
     await update.message.reply_text(texto)
+
+
+async def cmd_combustivel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    coords = await _exige_localizacao(update, context)
+    if not coords:
+        return
+    await update.message.chat.send_action("typing")
+    comb = await analise_combustivel(*coords)
+    linhas = [
+        f"🏍️ *Autonomia da Heritage*",
+        f"Tanque cheio (teórico): ~{AUTONOMIA_TOTAL_KM:.0f} km",
+        f"Autonomia segura (com reserva): ~{AUTONOMIA_SEGURA_KM:.0f} km",
+        "",
+        comb["mensagem"],
+    ]
+    if comb["postos"]:
+        linhas.append("\nPostos mais próximos:")
+        for p in comb["postos"]:
+            linhas.append(f"⛽ {p['nome']} — {p['dist_km']:.0f} km")
+    await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
 
 
 async def cmd_rota(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,6 +145,54 @@ async def cmd_dicas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Pra ver por perto:\n{nomes}")
 
 
+# ----- Linguagem natural (qualquer texto que nao seja comando) -----
+
+async def handle_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    pergunta = (msg.text or "").strip()
+    if not pergunta:
+        return
+    chat_id = update.effective_chat.id
+    await msg.chat.send_action("typing")
+
+    estado = get_estado(chat_id)
+    # Rota planejada (compacta) entra sempre no contexto, mesmo sem localizacao.
+    rota = [
+        {"ordem": w["ordem"], "nome": w["nome"], "cidade": w["cidade"],
+         "tipo": w["tipo"], "dicas": w["dicas"]}
+        for w in listar_waypoints() if not w["visitado"]
+    ][:12]
+
+    if estado and estado["ultima_lat"] is not None:
+        lat, lon = estado["ultima_lat"], estado["ultima_lon"]
+        clima, local, postos, atracoes, comb = await asyncio.gather(
+            get_clima(lat, lon),
+            reverse_geocode(lat, lon),
+            get_postos(lat, lon, SEARCH_RADIUS),
+            get_atracoes(lat, lon, SEARCH_RADIUS),
+            analise_combustivel(lat, lon),
+        )
+        prox = proxima_parada(lat, lon)
+        contexto = {
+            "local_atual": local,
+            "clima": clima,
+            "postos_proximos": postos,
+            "atracoes_proximas": atracoes,
+            "proxima_parada": prox,
+            "combustivel": comb["mensagem"],
+            "rota_planejada": rota,
+        }
+    else:
+        contexto = {
+            "aviso": "Os pilotos ainda nao compartilharam a localizacao, "
+                     "entao nao ha dados de clima/postos/atracoes do ponto atual.",
+            "rota_planejada": rota,
+        }
+
+    resposta = await responder_pergunta(contexto, pergunta)
+    await msg.reply_text(resposta)
+
+
 # ----- Localizacao -----
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -149,8 +224,11 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deve_relatar = (not eh_ao_vivo) or (agora - ultimo_aviso > INTERVALO_RELATORIO)
 
     if deve_relatar:
-        texto = await montar_relatorio(lat, lon)
+        texto, comb = await montar_relatorio(lat, lon)
         await context.bot.send_message(chat_id, texto)
+        # Alerta proativo de combustivel em zona critica/remota.
+        if comb["nivel"] in ("critico", "alerta", "remota"):
+            await context.bot.send_message(chat_id, comb["mensagem"])
         set_estado(chat_id, lat, lon, agora)
     else:
         # So atualiza a posicao, sem novo relatorio.
@@ -163,11 +241,14 @@ def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("relatorio", cmd_relatorio))
+    app.add_handler(CommandHandler("combustivel", cmd_combustivel))
     app.add_handler(CommandHandler("rota", cmd_rota))
     app.add_handler(CommandHandler("postos", cmd_postos))
     app.add_handler(CommandHandler("dicas", cmd_dicas))
     # Pega tanto o pin avulso quanto as edicoes da localizacao ao vivo.
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    # Qualquer texto que NAO seja comando vira pergunta em linguagem natural.
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_texto))
 
     log.info("Bot rodando. Ctrl+C para parar.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
